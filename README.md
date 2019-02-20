@@ -54,7 +54,7 @@ hugo {
 If you want to toggle logging at runtime, use `Hugo.setEnabled(true|false)`
 
 
-Local Development
+Local Development（本地调试）
 -----------------
 
 Working on this project? Here's some helpful Gradle tasks:
