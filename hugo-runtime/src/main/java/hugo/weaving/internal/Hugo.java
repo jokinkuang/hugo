@@ -14,11 +14,24 @@ import org.aspectj.lang.annotation.Pointcut;
 import org.aspectj.lang.reflect.CodeSignature;
 import org.aspectj.lang.reflect.MethodSignature;
 
+import java.io.PrintStream;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
+
+import hugo.weaving.io.IOHelper;
+import hugo.weaving.io.MultiOutputStream;
+import hugo.weaving.io.NLog;
 
 @Aspect
 public class Hugo {
   private static volatile boolean enabled = true;
+  private static final String IFLOW = "within(com.example.hugo.*)";
+
+  private static AtomicInteger i = new AtomicInteger(0);
+
+  static {
+    System.setOut(new PrintStream(new MultiOutputStream(System.out, "/sdcard/hugo.txt")));
+  }
 
   @Pointcut("within(@hugo.weaving.DebugLog *)")
   public void withinAnnotatedClass() {}
@@ -29,7 +42,7 @@ public class Hugo {
   @Pointcut("execution(!synthetic *.new(..)) && withinAnnotatedClass()")
   public void constructorInsideAnnotatedType() {}
 
-  @Pointcut("execution(@hugo.weaving.DebugLog * *(..)) || methodInsideAnnotatedType()")
+  @Pointcut(IFLOW)
   public void method() {}
 
   @Pointcut("execution(@hugo.weaving.DebugLog *.new(..)) || constructorInsideAnnotatedType()")
@@ -39,8 +52,21 @@ public class Hugo {
     Hugo.enabled = enabled;
   }
 
+  public static void init(String logFilePath) {
+    IOHelper.init(logFilePath);
+  }
+
+  public static void dumpStatistics() {
+    Statistics.dump();
+  }
+
   @Around("method() || constructor()")
   public Object logAndExecute(ProceedingJoinPoint joinPoint) throws Throwable {
+    // NLog.e(Constants.TAG, "JoinPoint:"+joinPoint);
+    i.addAndGet(1);
+    // NLog.e(Constants.TAG, new String(new char[i.get()]).replace("\0", "-")
+    //         +getLogPrefix(joinPoint)+"[start]");
+    printN(joinPoint);
     enterMethod(joinPoint);
 
     long startNanos = System.nanoTime();
@@ -48,20 +74,54 @@ public class Hugo {
     long stopNanos = System.nanoTime();
     long lengthMillis = TimeUnit.NANOSECONDS.toMillis(stopNanos - startNanos);
 
+    if (lengthMillis != 0) {
+      NLog.e(Constants.TAG, new String(new char[i.get()]).replace("\0", "-")
+              + getLogPrefix(joinPoint) + "[end]" + " " + lengthMillis + " ms");
+    } else {
+      // NLog.e(Constants.TAG, new String(new char[i.get()]).replace("\0", "-")
+      //         + getLogPrefix(joinPoint) + "[end]");
+    }
+    i.addAndGet(-1);
+    printN(joinPoint);
     exitMethod(joinPoint, result, lengthMillis);
 
+
+    Statistics.add(new Statistics.MethodProfile(getLogPrefix(joinPoint)+"[end]", lengthMillis));
+
     return result;
+  }
+
+  private static String getLogPrefix(ProceedingJoinPoint joinPoint) {
+    String kind = joinPoint.getStaticPart().getKind();
+    Class<?> cls = joinPoint.getSignature().getDeclaringType();
+    String methodName = joinPoint.getSignature().getName();
+    String thread = Thread.currentThread().getName();
+    return "->"+kind+"->"+thread +"->"+getClassName(cls) + "("+cls.hashCode()+")"+"->" + methodName;
+  }
+
+  private static void printN(ProceedingJoinPoint joinPoint) {
+    Signature signature = joinPoint.getSignature();
+    Class<?> cls = signature.getDeclaringType();
+    String methodName = signature.getName();
+
+
+    // Log.e(getClassName(cls), new String(new char[i]).replace("\0", "-") + methodName);
   }
 
   private static void enterMethod(JoinPoint joinPoint) {
     if (!enabled) return;
 
-    CodeSignature codeSignature = (CodeSignature) joinPoint.getSignature();
+    Signature codeSignature = joinPoint.getSignature();
 
     Class<?> cls = codeSignature.getDeclaringType();
     String methodName = codeSignature.getName();
-    String[] parameterNames = codeSignature.getParameterNames();
-    Object[] parameterValues = joinPoint.getArgs();
+    String[] parameterNames = new String[0];
+    Object[] parameterValues = new Object[0];
+
+    if (joinPoint.getSignature() instanceof  MethodSignature) {
+      parameterNames = ((MethodSignature) codeSignature).getParameterNames();
+      parameterValues = joinPoint.getArgs();
+    }
 
     StringBuilder builder = new StringBuilder("\u21E2 ");
     builder.append(methodName).append('(');
@@ -78,7 +138,7 @@ public class Hugo {
       builder.append(" [Thread:\"").append(Thread.currentThread().getName()).append("\"]");
     }
 
-    Log.v(asTag(cls), builder.toString());
+    // Log.e(getClassName(cls), builder.toString());
 
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN_MR2) {
       final String section = builder.toString().substring(2);
@@ -101,6 +161,7 @@ public class Hugo {
         && ((MethodSignature) signature).getReturnType() != void.class;
 
     StringBuilder builder = new StringBuilder("\u21E0 ")
+        .append(getClassName(cls))
         .append(methodName)
         .append(" [")
         .append(lengthMillis)
@@ -111,12 +172,12 @@ public class Hugo {
       builder.append(Strings.toString(result));
     }
 
-    Log.v(asTag(cls), builder.toString());
+    // Log.e(Constants.TAG, builder.toString());
   }
 
-  private static String asTag(Class<?> cls) {
+  private static String getClassName(Class<?> cls) {
     if (cls.isAnonymousClass()) {
-      return asTag(cls.getEnclosingClass());
+      return getClassName(cls.getEnclosingClass());
     }
     return cls.getSimpleName();
   }

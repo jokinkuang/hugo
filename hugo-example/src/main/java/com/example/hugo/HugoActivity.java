@@ -5,7 +5,9 @@ import android.os.Bundle;
 import android.os.SystemClock;
 import android.util.Log;
 import android.widget.TextView;
+
 import hugo.weaving.DebugLog;
+import hugo.weaving.internal.Hugo;
 
 public class HugoActivity extends Activity {
   @Override protected void onCreate(Bundle savedInstanceState) {
@@ -25,16 +27,21 @@ public class HugoActivity extends Activity {
     Log.d("Charming", charmer.askHowAreYou());
 
     startSleepyThread();
+
+    tv.postDelayed(new Runnable() {
+      @Override
+      public void run() {
+        Hugo.dumpStatistics();
+      }
+    }, 5000);
   }
 
-  @DebugLog
   private void printArgs(String... args) {
     for (String arg : args) {
       Log.i("Args", arg);
     }
   }
 
-  @DebugLog
   private int fibonacci(int number) {
     if (number <= 0) {
       throw new IllegalArgumentException("Number must be greater than zero.");
@@ -51,17 +58,15 @@ public class HugoActivity extends Activity {
       private static final long SOME_POINTLESS_AMOUNT_OF_TIME = 50;
 
       @Override public void run() {
-        sleepyMethod(SOME_POINTLESS_AMOUNT_OF_TIME);
+        // sleepyMethod(SOME_POINTLESS_AMOUNT_OF_TIME);
       }
 
-      @DebugLog
       private void sleepyMethod(long milliseconds) {
         SystemClock.sleep(milliseconds);
       }
     }, "I'm a lazy thr.. bah! whatever!").start();
   }
 
-  @DebugLog
   static class Greeter {
     private final String name;
 
@@ -74,7 +79,6 @@ public class HugoActivity extends Activity {
     }
   }
 
-  @DebugLog
   static class Charmer {
     private final String name;
 
